@@ -1,3 +1,5 @@
 bearer-token.txt
 token-cache.json
 cost-results-*.json
+extension.pem
+extension.crx

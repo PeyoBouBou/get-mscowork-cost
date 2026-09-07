@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Copilot Credits Monitor",
+  "version": "1.0.0",
+  "description": "Visualise la consommation de vos credits Copilot (endpoint /v1/cost) sous forme de graphiques.",
+  "permissions": ["webRequest", "storage", "alarms", "scripting", "tabs"],
+  "host_permissions": [
+    "*://*.powerapps.com/*",
+    "*://*.cloud.microsoft/*",
+    "*://*.office.com/*",
+    "*://copilot.microsoft.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.cloud.microsoft/*",
+        "*://*.office.com/*",
+        "*://copilot.microsoft.com/*"
+      ],
+      "js": ["inject-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://*.cloud.microsoft/*",
+        "*://*.office.com/*",
+        "*://copilot.microsoft.com/*"
+      ],
+      "js": ["content-relay.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_title": "Copilot Credits Monitor",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

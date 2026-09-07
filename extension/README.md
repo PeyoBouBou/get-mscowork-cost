@@ -32,10 +32,51 @@ En dernier recours, l'ecran d'accueil propose **Saisir un jeton manuellement**
 
 ## Installation
 
-1. `chrome://extensions` (ou `edge://extensions`) ;
-2. activer le **Mode developpeur** ;
-3. **Charger l'extension non empaquetee** et selectionner le dossier
-   `extension/`.
+L'extension n'est pas publiee sur le Chrome Web Store : elle se charge en mode
+developpeur, directement depuis le dossier `extension/` de ce depot.
+
+### 1. Ouvrir la page des extensions et activer le mode developpeur
+
+Saisir `chrome://extensions` (ou `edge://extensions`) dans la barre d'adresse,
+puis activer l'interrupteur **Mode developpeur** en haut a droite.
+
+![Activation du mode developpeur sur chrome://extensions](../docs/install-1-mode-developpeur.png)
+
+### 2. Charger l'extension non empaquetee
+
+Le bouton **Charger l'extension non empaquetee** apparait une fois le mode
+developpeur actif.
+
+1. cliquer sur **Charger l'extension non empaquetee** ;
+2. naviguer jusqu'au dossier `extension/` du depot ;
+3. valider avec **Selectionner un dossier**.
+
+> Selectionnez bien le dossier `extension/` lui-meme (celui qui contient
+> `manifest.json`), et non la racine du depot.
+
+![Selection du dossier extension dans la boite de dialogue](../docs/install-2-charger-extension.png)
+
+### 3. Verifier le chargement
+
+La carte **Copilot Credits Monitor 1.0.0** apparait dans la liste et l'icone
+s'ajoute a la barre d'outils. Le badge affiche le pourcentage de credits
+consommes des que des donnees sont disponibles.
+
+![Extension chargee et icone epinglee dans la barre d'outils](../docs/install-3-extension-chargee.png)
+
+Si l'icone n'est pas visible, cliquez sur le bouton **Extensions** (piece de
+puzzle) de la barre d'outils et epinglez **Copilot Credits Monitor**.
+
+> [!IMPORTANT]
+> L'extension ne capture que les requetes emises **apres** son chargement.
+> Rechargez l'onglet Microsoft 365 Copilot juste apres l'installation, sinon le
+> jeton ne sera pas detecte.
+
+### Mise a jour apres modification du code
+
+Apres avoir modifie un fichier de `extension/`, cliquez sur l'icone de
+rafraichissement de la carte de l'extension (fleche circulaire), puis rechargez
+l'onglet Copilot.
 
 ## Utilisation
 

@@ -95,7 +95,9 @@ fonctionnent :
 
 Azure CLI (`04b07795-...`) n'est **pas** autorise par cette API.
 
-Preciser `-TenantId` accelere la connexion et evite les ambiguites de compte :
+Preciser `-TenantId` accelere la connexion et evite les ambiguites de compte.
+Remplacez le placeholder par l'identifiant de votre propre tenant (visible dans
+Entra ID, ou via `Get-AzContext`) :
 
 ```powershell
 .\Invoke-CostPolling.ps1 -TenantId '<votre-tenant-id>'

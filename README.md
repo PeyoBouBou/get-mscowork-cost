@@ -1,4 +1,4 @@
-# API cost
+# Cowork Cost Recuperator
 
 > [!WARNING]
 > **Projet developpe en vibe coding et par retro-engineering.**

@@ -1,11 +1,34 @@
 # API cost
 
+> [!WARNING]
+> **Projet developpe en vibe coding et par retro-engineering.**
+>
+> L'endpoint `/v1/cost` du runtime Aether n'est ni public ni documente : tout ce
+> qui suit a ete deduit par observation du client web (formats de reponse,
+> en-tetes attendus, applications autorisees, endpoints regionaux). Rien n'est
+> contractuel.
+>
+> Microsoft peut modifier ou retirer cet endpoint, son schema de reponse ou sa
+> liste d'applications acceptees a tout moment et sans preavis. **La fiabilite
+> dans le temps n'est donc pas assuree** : ce code peut cesser de fonctionner du
+> jour au lendemain. A utiliser a vos propres risques, sans aucune garantie.
+
 Deux clients pour l'endpoint `/v1/cost` :
 
 - `Invoke-CostPolling.ps1` : polling en PowerShell (ci-dessous) ;
 - `extension/` : extension Chrome/Edge affichant la consommation en graphiques,
   avec recuperation automatique du jeton de session (voir
   [extension/README.md](extension/README.md)).
+
+## Apercu
+
+### Script PowerShell
+
+![Polling de l'API cost en PowerShell](docs/screenshot-script.png)
+
+### Extension Chrome/Edge
+
+![Popup de l'extension Credits Copilot](docs/screenshot-extension.png)
 
 ## Polling de l'API cost
 

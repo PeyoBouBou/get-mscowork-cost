@@ -17,7 +17,7 @@ param(
 
     [string]$Authority = 'https://login.microsoftonline.com',
 
-    [string]$ClientId = '04b07795-8ddb-461a-bbee-02f9e1bf7b46',
+    [string]$ClientId = '1950a258-227b-4e31-a9cf-717495945fc2',
 
     [string]$Scope = '96ff4394-9197-43aa-b393-6a41652e21f8/.default',
 
@@ -36,11 +36,20 @@ if ($PSVersionTable.PSEdition -eq 'Desktop') {
 $script:StartTime = Get-Date
 $script:SeparatorHandled = $false
 $script:TokenInfo = $null
+$script:CacheMismatchWarned = $false
 
 $ScriptColor = 'Cyan'
 $ResponseColor = 'Green'
 $SeparatorColor = 'DarkGray'
 $AuthColor = 'Yellow'
+
+$KnownClients = @{
+    '1950a258-227b-4e31-a9cf-717495945fc2' = 'Azure PowerShell'
+    'd3590ed6-52b3-4102-aeff-aad2292ab01c' = 'Microsoft Office'
+    'c0ab8ce9-e9a0-42e7-b064-33d422df41f1' = 'Microsoft 365 Copilot (client web)'
+    '96ff4394-9197-43aa-b393-6a41652e21f8' = 'Runtime Aether (ressource elle-meme)'
+    '04b07795-8ddb-461a-bbee-02f9e1bf7b46' = 'Azure CLI'
+}
 
 $AuthorityBase = "$($Authority.TrimEnd('/'))/$TenantId/oauth2/v2.0"
 
@@ -126,14 +135,29 @@ function Get-TokenExpiry {
 }
 
 function Test-TokenUsable {
-    param($Info, [int]$MarginSeconds = 120)
+    param(
+        $Info,
+        [int]$MarginSeconds = 120,
+        [switch]$RequireClientMatch
+    )
 
     $token = Get-Prop $Info 'AccessToken'
     if ([string]::IsNullOrWhiteSpace($token)) { return $false }
 
-    $expiry = Get-TokenExpiry -Token $token
-    if ($null -eq $expiry) { return $true }
+    $payload = ConvertFrom-JwtPayload -Token $token
 
+    if ($RequireClientMatch) {
+        $appId = Get-Prop $payload 'appid'
+        if ([string]::IsNullOrWhiteSpace($appId)) { $appId = Get-Prop $payload 'azp' }
+        if (-not [string]::IsNullOrWhiteSpace($appId) -and $appId -ne $ClientId) {
+            return $false
+        }
+    }
+
+    $exp = Get-Prop $payload 'exp'
+    if ($null -eq $exp) { return $true }
+
+    $expiry = [System.DateTimeOffset]::FromUnixTimeSeconds([long]$exp).UtcDateTime
     return $expiry -gt (Get-Date).ToUniversalTime().AddSeconds($MarginSeconds)
 }
 
@@ -150,6 +174,33 @@ function Unprotect-Secret {
     return [System.Net.NetworkCredential]::new('', $secure).Password
 }
 
+function Write-FileContent {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Content,
+        [switch]$Append,
+        [int]$MaxAttempts = 5
+    )
+
+    $encoding = [System.Text.UTF8Encoding]::new($false)
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            if ($Append) {
+                [System.IO.File]::AppendAllText($Path, $Content, $encoding)
+            }
+            else {
+                [System.IO.File]::WriteAllText($Path, $Content, $encoding)
+            }
+            return
+        }
+        catch {
+            if ($attempt -eq $MaxAttempts) { throw }
+            Start-Sleep -Milliseconds (150 * $attempt)
+        }
+    }
+}
+
 function Read-TokenCache {
     $path = Resolve-FullPath -Path $TokenCacheFile
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
@@ -160,7 +211,10 @@ function Read-TokenCache {
         $cachedScope = Get-Prop $raw 'Scope'
         $cachedClient = Get-Prop $raw 'ClientId'
         if ($cachedScope -ne $Scope -or $cachedClient -ne $ClientId) {
-            Write-ScriptMessage 'Cache de jeton ignore : client ou scope different.' $AuthColor
+            if (-not $script:CacheMismatchWarned) {
+                Write-ScriptMessage 'Cache de jeton ignore : client ou scope different.' $AuthColor
+                $script:CacheMismatchWarned = $true
+            }
             return $null
         }
 
@@ -213,7 +267,7 @@ function Write-TokenCache {
     }
 
     $json = [pscustomobject]$payload | ConvertTo-Json -Depth 5
-    [System.IO.File]::WriteAllText($path, $json, [System.Text.UTF8Encoding]::new($false))
+    Write-FileContent -Path $path -Content $json
 }
 
 function Save-BearerTokenFile {
@@ -221,7 +275,7 @@ function Save-BearerTokenFile {
 
     $path = Resolve-FullPath -Path $TokenFile
     Confirm-ParentDirectory -Path $path
-    [System.IO.File]::WriteAllText($path, $Token, [System.Text.UTF8Encoding]::new($false))
+    Write-FileContent -Path $path -Content $Token
 }
 
 function Get-OAuthErrorCode {
@@ -365,7 +419,7 @@ function Get-AccessToken {
                 $fileToken = (Get-Content -LiteralPath $TokenFile -Raw) -replace '^\s*Bearer\s+', ''
                 $fileToken = $fileToken.Trim()
                 $candidate = [pscustomobject]@{ AccessToken = $fileToken; RefreshToken = $null }
-                if (Test-TokenUsable -Info $candidate) {
+                if (Test-TokenUsable -Info $candidate -RequireClientMatch) {
                     Write-ScriptMessage "Jeton repris depuis '$TokenFile'."
                     $script:TokenInfo = $candidate
                     return $fileToken
@@ -374,7 +428,7 @@ function Get-AccessToken {
 
             $cached = Read-TokenCache
             if ($null -ne $cached) {
-                if (Test-TokenUsable -Info $cached) {
+                if (Test-TokenUsable -Info $cached -RequireClientMatch) {
                     Write-ScriptMessage 'Jeton repris depuis le cache local.'
                     $script:TokenInfo = $cached
                     return $cached.AccessToken
@@ -422,7 +476,6 @@ function Add-ResponseToFile {
         [Parameter(Mandatory)][string]$Json
     )
 
-    $encoding = [System.Text.UTF8Encoding]::new($false)
     $newLine = [System.Environment]::NewLine
 
     if (-not $script:SeparatorHandled) {
@@ -433,12 +486,12 @@ function Add-ResponseToFile {
 
         if ($fileHasContent) {
             $separator = '--- {0:yyyy-MM-dd HH:mm:ss} ---' -f $script:StartTime
-            [System.IO.File]::AppendAllText($Path, $separator + $newLine, $encoding)
+            Write-FileContent -Path $Path -Content ($separator + $newLine) -Append
             Write-Host $separator -ForegroundColor $SeparatorColor
         }
     }
 
-    [System.IO.File]::AppendAllText($Path, $Json + $newLine, $encoding)
+    Write-FileContent -Path $Path -Content ($Json + $newLine) -Append
 }
 
 function Invoke-CostRequest {
@@ -479,26 +532,73 @@ function Invoke-CostRequest {
     }
 }
 
-function Show-UnauthorizedDetail {
+function Get-UnauthorizedInfo {
     param([string]$Body)
 
-    if ([string]::IsNullOrWhiteSpace($Body)) { return }
+    $info = [pscustomobject]@{
+        Code          = $null
+        Reason        = $null
+        Message       = $null
+        AppIdRejected = $false
+        AllowedAppIds = @()
+        RawBody       = $Body
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Body)) { return $info }
 
     try {
         $parsed = $Body | ConvertFrom-Json
-        $code = Get-Prop $parsed 'code'
-        $reason = Get-Prop $parsed 'reason'
-        $message = Get-Prop $parsed 'message'
-
-        if (-not [string]::IsNullOrWhiteSpace($code)) {
-            Write-ScriptMessage "Detail : $code / $reason" 'Red'
-        }
-        if (-not [string]::IsNullOrWhiteSpace($message)) {
-            Write-Host "  $message" -ForegroundColor 'Red'
-        }
+        $info.Code = Get-Prop $parsed 'code'
+        $info.Reason = Get-Prop $parsed 'reason'
+        $info.Message = Get-Prop $parsed 'message'
     }
     catch {
-        Write-Host $Body -ForegroundColor 'Red'
+        $info.Message = $Body
+    }
+
+    $probe = "$($info.Reason) $($info.Message)"
+    if ($probe -match 'invalid_appid' -or $probe -match 'Invalid appid') {
+        $info.AppIdRejected = $true
+        $guids = [regex]::Matches($probe, '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+        $allowed = @()
+        foreach ($g in $guids) {
+            if ($g.Value -ne $ClientId -and $allowed -notcontains $g.Value) {
+                $allowed += $g.Value
+            }
+        }
+        $info.AllowedAppIds = $allowed
+    }
+
+    return $info
+}
+
+function Show-UnauthorizedDetail {
+    param([Parameter(Mandatory)]$Info)
+
+    if (-not [string]::IsNullOrWhiteSpace($Info.Code)) {
+        Write-ScriptMessage "Detail : $($Info.Code) / $($Info.Reason)" 'Red'
+    }
+
+    if ($Info.AppIdRejected) {
+        Write-Host "  L'API refuse l'application appelante (ClientId $ClientId)." -ForegroundColor 'Red'
+        if ($Info.AllowedAppIds.Count -gt 0) {
+            Write-Host '  Relancez avec -ClientId parmi les applications autorisees :' -ForegroundColor $AuthColor
+            foreach ($id in $Info.AllowedAppIds) {
+                $label = $KnownClients[$id]
+                if ([string]::IsNullOrWhiteSpace($label)) { $label = 'application first-party non identifiee' }
+                Write-Host "    $id  ($label)" -ForegroundColor $AuthColor
+            }
+        }
+        return
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Info.Message)) {
+        Write-Host "  $($Info.Message)" -ForegroundColor 'Red'
+        return
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Info.RawBody)) {
+        Write-Host "  $($Info.RawBody)" -ForegroundColor 'Red'
     }
 }
 
@@ -522,8 +622,14 @@ try {
                 $result = Invoke-CostRequest -Client $httpClient -Token $token
 
                 if ($result.StatusCode -eq 401 -and -not $renewedThisCycle) {
+                    $authInfo = Get-UnauthorizedInfo -Body $result.Body
+
+                    if ($authInfo.AppIdRejected) {
+                        break
+                    }
+
                     Write-ScriptMessage 'HTTP 401 (Unauthorized) - jeton invalide ou expire.' $AuthColor
-                    Show-UnauthorizedDetail -Body $result.Body
+                    Show-UnauthorizedDetail -Info $authInfo
                     $renewedThisCycle = $true
                     $token = Get-AccessToken -ForceRenew
                     Write-ScriptMessage 'Nouvelle tentative avec le jeton renouvele...' $AuthColor
@@ -536,7 +642,7 @@ try {
             if ($result.StatusCode -ne 200) {
                 Write-ScriptMessage "HTTP $($result.StatusCode) ($($result.ReasonPhrase)) - arret du script." 'Red'
                 if ($result.StatusCode -eq 401) {
-                    Show-UnauthorizedDetail -Body $result.Body
+                    Show-UnauthorizedDetail -Info (Get-UnauthorizedInfo -Body $result.Body)
                 }
                 elseif (-not [string]::IsNullOrWhiteSpace($result.Body)) {
                     Write-Host $result.Body -ForegroundColor 'Red'
@@ -556,10 +662,12 @@ try {
                 Add-ResponseToFile -Path $outputPath -Json $jsonLine
                 Write-Host $jsonLine -ForegroundColor $ResponseColor
                 Write-ScriptMessage "HTTP 200 - JSON ajoute dans '$outputPath'"
+                $exitCode = 0
             }
         }
         catch {
             Write-ScriptMessage "Echec de l'appel : $($_.Exception.Message)" 'Red'
+            $exitCode = 1
         }
 
         if ($stop) { break }

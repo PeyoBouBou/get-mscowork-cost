@@ -41,21 +41,27 @@ Pour forcer une reconnexion :
 
 ### Parametres d'identite
 
-| Parametre    | Defaut                                             |
-|--------------|----------------------------------------------------|
-| `-TenantId`  | `organizations`                                    |
-| `-ClientId`  | `04b07795-8ddb-461a-bbee-02f9e1bf7b46` (Azure CLI)  |
-| `-Scope`     | `96ff4394-9197-43aa-b393-6a41652e21f8/.default`    |
-| `-Authority` | `https://login.microsoftonline.com`                |
+| Parametre    | Defaut                                                  |
+|--------------|---------------------------------------------------------|
+| `-TenantId`  | `organizations`                                          |
+| `-ClientId`  | `1950a258-227b-4e31-a9cf-717495945fc2` (Azure PowerShell) |
+| `-Scope`     | `96ff4394-9197-43aa-b393-6a41652e21f8/.default`         |
+| `-Authority` | `https://login.microsoftonline.com`                     |
 
-Le GUID `96ff4394-...` est la ressource du runtime Aether en production. Si le
-client par defaut n'obtient pas de consentement dans votre tenant, essayez un
-autre client public :
+Le GUID `96ff4394-...` est la ressource du runtime Aether en production.
+
+L'API n'accepte qu'une liste fermee d'applications appelantes : un jeton
+parfaitement valide est refuse avec `invalid_appid` si le `ClientId` n'y figure
+pas. Le script detecte ce cas, n'essaie pas de renouveler inutilement le jeton
+et affiche la liste des applications acceptees. Clients publics connus qui
+fonctionnent :
 
 ```powershell
+.\Invoke-CostPolling.ps1 -Login -ClientId '1950a258-227b-4e31-a9cf-717495945fc2'  # Azure PowerShell (defaut)
 .\Invoke-CostPolling.ps1 -Login -ClientId 'd3590ed6-52b3-4102-aeff-aad2292ab01c'  # Microsoft Office
-.\Invoke-CostPolling.ps1 -Login -ClientId '1950a258-227b-4e31-a9cf-717495945fc2'  # Azure PowerShell
 ```
+
+Azure CLI (`04b07795-...`) n'est **pas** autorise par cette API.
 
 Preciser `-TenantId` accelere la connexion et evite les ambiguites de compte :
 
@@ -93,13 +99,20 @@ l'heure de lancement est ajoute avant les nouveaux resultats :
 
 ## Gestion des erreurs
 
-- **401** : le script affiche le detail (`code`, `reason`, `message`), renouvele
-  le jeton puis rejoue l'appel une fois. Si le 401 persiste, il s'arrete.
+- **401 jeton expire ou invalide** : le script affiche le detail, renouvele le
+  jeton puis rejoue l'appel une fois. Si le 401 persiste, il s'arrete.
+- **401 `invalid_appid`** : renouveler ne servirait a rien, car le nouveau jeton
+  porterait le meme `appid`. Le script s'arrete immediatement et liste les
+  applications acceptees.
 - **Autre statut different de 200** : arret immediat.
 
 Dans tous les cas, les erreurs sont affichees dans la console uniquement :
 aucune donnee d'erreur n'est ecrite dans le fichier de trace. Le code de sortie
 vaut alors `1`.
+
+Un jeton mis en cache dont l'`appid` ne correspond pas au `-ClientId` demande
+est ignore, ce qui evite de rester bloque sur un jeton refuse apres avoir
+change de client.
 
 ## Couleurs de la console
 

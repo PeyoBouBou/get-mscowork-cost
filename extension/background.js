@@ -22,7 +22,7 @@ function decodeJwtExp(token) {
   }
 }
 
-async function storeToken(rawToken, url, source) {
+async function storeToken(rawToken, url, source, force = false) {
   const token = String(rawToken || '')
     .replace(/^\s*Bearer\s+/i, '')
     .trim();
@@ -34,7 +34,13 @@ async function storeToken(rawToken, url, source) {
   const current = await chrome.storage.local.get(['token', 'tokenExpiresAt']);
   if (current.token === token) return false;
   // Ne pas remplacer un jeton valide par un jeton qui expire plus tot.
-  if (current.token && current.tokenExpiresAt && expiresAt && expiresAt < current.tokenExpiresAt) {
+  if (
+    !force &&
+    current.token &&
+    current.tokenExpiresAt &&
+    expiresAt &&
+    expiresAt < current.tokenExpiresAt
+  ) {
     return false;
   }
 
@@ -156,6 +162,183 @@ async function fetchCost() {
   return { ok: true, cost };
 }
 
+// --- Recherche du jeton dans la memoire de l'onglet ---------------------------
+
+const SCAN_MATCHES = [
+  '*://*.cloud.microsoft/*',
+  '*://*.office.com/*',
+  '*://copilot.microsoft.com/*',
+  '*://*.powerapps.com/*'
+];
+
+// Execute dans la page : collecte les JWT et les hotes runtime vus.
+function scanPageForTokens() {
+  const JWT = /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g;
+  const tokens = new Set();
+  const hosts = new Set();
+
+  const scanString = (value) => {
+    if (typeof value !== 'string' || value.length < 40) return;
+    const found = value.match(JWT);
+    if (found) found.forEach((t) => tokens.add(t));
+  };
+
+  const scanValue = (value, depth = 0) => {
+    if (depth > 4 || value == null) return;
+    if (typeof value === 'string') return scanString(value);
+    if (typeof value !== 'object') return;
+    for (const item of Array.isArray(value) ? value : Object.values(value)) {
+      scanValue(item, depth + 1);
+    }
+  };
+
+  for (const store of [window.localStorage, window.sessionStorage]) {
+    try {
+      for (let i = 0; i < store.length; i += 1) {
+        const key = store.key(i);
+        scanString(store.getItem(key));
+      }
+    } catch {
+      /* stockage inaccessible */
+    }
+  }
+
+  try {
+    for (const entry of performance.getEntriesByType('resource')) {
+      const host = new URL(entry.name, location.href).host;
+      if (/gateway\.prod\.island\.powerapps\.com$/i.test(host)) hosts.add(host);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const idb = (async () => {
+    if (!indexedDB.databases) return;
+    const dbs = await indexedDB.databases();
+    for (const info of dbs.slice(0, 10)) {
+      if (!info.name) continue;
+      const db = await new Promise((resolve) => {
+        const req = indexedDB.open(info.name);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+        req.onblocked = () => resolve(null);
+      });
+      if (!db) continue;
+      for (const storeName of Array.from(db.objectStoreNames).slice(0, 10)) {
+        try {
+          const rows = await new Promise((resolve) => {
+            const req = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => resolve([]);
+          });
+          rows.slice(0, 200).forEach((row) => scanValue(row));
+        } catch {
+          /* store illisible */
+        }
+      }
+      db.close();
+    }
+  })();
+
+  return Promise.race([idb, new Promise((r) => setTimeout(r, 2500))]).then(() => ({
+    tokens: Array.from(tokens),
+    hosts: Array.from(hosts)
+  }));
+}
+
+function rankCandidates(tokens) {
+  const now = Date.now();
+  return tokens
+    .map((token) => {
+      let claims = {};
+      try {
+        const padded = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        claims = JSON.parse(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4)));
+      } catch {
+        return null;
+      }
+      const exp = typeof claims.exp === 'number' ? claims.exp * 1000 : null;
+      if (exp && exp <= now) return null;
+      const aud = String(claims.aud || '');
+      const score =
+        (aud === RUNTIME_AUDIENCE ? 100 : 0) +
+        (/island|powerapps|copilot/i.test(aud) ? 20 : 0) +
+        (/access_as_user/.test(String(claims.scp || '')) ? 5 : 0);
+      return { token, exp, score };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || (b.exp || 0) - (a.exp || 0))
+    .slice(0, 12);
+}
+
+async function scanForToken() {
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: SCAN_MATCHES });
+  } catch {
+    tabs = [];
+  }
+  if (!tabs.length) return { ok: false, reason: 'no-tab' };
+
+  const tokens = new Set();
+  const hosts = new Set();
+  for (const tab of tabs) {
+    let results = [];
+    try {
+      results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: scanPageForTokens
+      });
+    } catch {
+      continue;
+    }
+    for (const frame of results) {
+      (frame.result?.tokens || []).forEach((t) => tokens.add(t));
+      (frame.result?.hosts || []).forEach((h) => hosts.add(h));
+    }
+  }
+
+  if (!tokens.size) return { ok: false, reason: 'no-candidate', tabs: tabs.length };
+
+  const { costUrl } = await chrome.storage.local.get('costUrl');
+  const baseUrls = [
+    ...Array.from(hosts).map((h) => `https://${h}${COST_PATH}`),
+    costUrl,
+    DEFAULT_COST_URL
+  ].filter(Boolean);
+  const urls = Array.from(new Set(baseUrls));
+
+  const candidates = rankCandidates(Array.from(tokens));
+  if (!candidates.length) return { ok: false, reason: 'no-candidate', tabs: tabs.length };
+
+  for (const candidate of candidates) {
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${candidate.token}`, Accept: 'application/json' },
+          cache: 'no-store'
+        });
+        if (!response.ok) continue;
+        const cost = await response.json();
+        await storeToken(candidate.token, url, 'scan memoire', true);
+        await chrome.storage.local.set({
+          lastCost: cost,
+          lastFetchAt: Date.now(),
+          lastError: null
+        });
+        await pushHistory(cost);
+        await updateBadge(cost);
+        return { ok: true, cost, tried: candidates.length };
+      } catch {
+        /* candidat suivant */
+      }
+    }
+  }
+
+  return { ok: false, reason: 'no-valid-token', tried: candidates.length };
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'refresh') {
     fetchCost().then(sendResponse);
@@ -165,9 +348,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     getState().then(sendResponse);
     return true;
   }
+  if (message?.type === 'captured') {
+    storeToken(message.token, message.url || DEFAULT_COST_URL, 'hook page');
+    return false;
+  }
+  if (message?.type === 'scan') {
+    scanForToken().then(sendResponse);
+    return true;
+  }
   if (message?.type === 'set-token') {
     (async () => {
-      const stored = await storeToken(message.token, message.url || DEFAULT_COST_URL, 'manuel');
+      const stored = await storeToken(message.token, message.url || DEFAULT_COST_URL, 'manuel', true);
       if (!stored) {
         sendResponse({ ok: false, reason: 'invalid-token' });
         return;

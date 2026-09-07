@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Copilot Credits Monitor</title>
+  </head>
+  <body>
+    <header>
+      <h1>Credits Copilot</h1>
+      <button id="refresh" title="Rafraichir">&#x21bb;</button>
+    </header>
+
+    <section id="onboarding" class="panel hidden">
+      <div class="onboarding-icon">&#128274;</div>
+      <h2>Jeton introuvable</h2>
+      <p>
+        Ouvrez Copilot Studio dans un onglet et lancez la commande
+        <code>/cost</code> dans le chat.
+      </p>
+      <p class="muted">
+        L'extension recupere alors automatiquement le jeton de votre session et
+        affiche votre consommation ici.
+      </p>
+    </section>
+
+    <section id="dashboard" class="panel hidden">
+      <div class="gauges">
+        <figure>
+          <canvas id="userGauge" width="200" height="200"></canvas>
+          <figcaption>
+            <strong>Utilisateur</strong>
+            <span id="userDetail" class="muted"></span>
+          </figcaption>
+        </figure>
+        <figure>
+          <canvas id="policyGauge" width="200" height="200"></canvas>
+          <figcaption>
+            <strong id="policyName">Policy</strong>
+            <span id="policyDetail" class="muted"></span>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="bars">
+        <div class="bar-row">
+          <div class="bar-label">
+            <span>Restant utilisateur</span><span id="userRemaining"></span>
+          </div>
+          <div class="bar"><div id="userBar" class="bar-fill"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">
+            <span>Restant policy</span><span id="policyRemaining"></span>
+          </div>
+          <div class="bar"><div id="policyBar" class="bar-fill"></div></div>
+        </div>
+      </div>
+
+      <div class="trend">
+        <div class="trend-head">
+          <span>Evolution (utilisateur)</span>
+          <span id="trendRange" class="muted"></span>
+        </div>
+        <canvas id="trend" width="360" height="110"></canvas>
+      </div>
+
+      <dl class="meta">
+        <div><dt>Donnees au</dt><dd id="asOfDate">-</dd></div>
+        <div><dt>Reinitialisation</dt><dd id="resetOn">-</dd></div>
+        <div><dt>Dernier appel</dt><dd id="lastFetch">-</dd></div>
+        <div><dt>Jeton</dt><dd id="tokenState">-</dd></div>
+      </dl>
+    </section>
+
+    <p id="error" class="error hidden"></p>
+
+    <footer>
+      <button id="clear" class="link">Effacer les donnees locales</button>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

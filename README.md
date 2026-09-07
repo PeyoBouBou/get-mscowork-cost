@@ -1,4 +1,13 @@
-# Polling de l'API cost
+# API cost
+
+Deux clients pour l'endpoint `/v1/cost` :
+
+- `Invoke-CostPolling.ps1` : polling en PowerShell (ci-dessous) ;
+- `extension/` : extension Chrome/Edge affichant la consommation en graphiques,
+  avec recuperation automatique du jeton de session (voir
+  [extension/README.md](extension/README.md)).
+
+## Polling de l'API cost
 
 ## Jeton Bearer
 

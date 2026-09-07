@@ -168,10 +168,13 @@ function renderCost(cost, state) {
   } else if (expiresAt) {
     const minutes = Math.round((expiresAt - Date.now()) / 60000);
     $('tokenState').textContent =
-      minutes > 0 ? `valide ${minutes} min` : 'expire - relancez /cost';
+      minutes > 0
+        ? `valide ${minutes} min (${state.tokenSource || 'capture'})`
+        : 'expire - rechargez la page Copilot';
   } else {
     $('tokenState').textContent = `capture ${formatDate(state.tokenCapturedAt)}`;
   }
+  $('endpoint').textContent = state.costUrl || '-';
 
   const history = state.history || [];
   drawTrend($('trend'), history);
@@ -207,7 +210,7 @@ async function refresh() {
   button.classList.remove('spinning');
 
   if (result?.reason === 'expired-token') {
-    showError('Jeton expire. Relancez /cost dans Copilot Studio.');
+    showError('Jeton expire. Rechargez la page Microsoft 365 Copilot.');
   } else if (result && !result.ok && result.reason !== 'no-token') {
     showError(result.message || 'Echec de la recuperation.');
   }
@@ -215,6 +218,24 @@ async function refresh() {
 }
 
 $('refresh').addEventListener('click', refresh);
+$('manualSubmit').addEventListener('click', async () => {
+  const token = $('manualToken').value.trim();
+  const url = $('manualUrl').value.trim();
+  if (!token) {
+    showError('Collez un jeton.');
+    return;
+  }
+  const result = await chrome.runtime.sendMessage({ type: 'set-token', token, url });
+  if (result?.reason === 'invalid-token') {
+    showError('Jeton invalide ou expire.');
+  } else if (result && !result.ok) {
+    showError(result.message || 'Echec de la recuperation.');
+  } else {
+    showError(null);
+    $('manualToken').value = '';
+  }
+  await render();
+});
 $('clear').addEventListener('click', async () => {
   await chrome.runtime.sendMessage({ type: 'clear' });
   await render();

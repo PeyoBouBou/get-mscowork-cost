@@ -1,19 +1,20 @@
+const COST_PATH = '/v1/cost';
+const COST_PATH_RE = /\/v[0-9]+\/cost(\?|$)/i;
 const DEFAULT_COST_URL =
   'https://mcsaetherruntime-eus.us-ia106.gateway.prod.island.powerapps.com/v1/cost';
-const COST_PATH_RE = /\/v[0-9]+\/cost(\?|$)/i;
-const WATCHED_URLS = [
-  '*://*.powerapps.com/*',
-  '*://*.powerplatform.com/*',
-  '*://*.microsoft.com/*'
-];
+// Hotes qui portent un jeton utilisable pour /v1/cost (runtime Copilot).
+const TOKEN_HOST_RE = /(^|\.)gateway\.prod\.island\.powerapps\.com$/i;
+const WATCHED_URLS = ['*://*.powerapps.com/*'];
 const HISTORY_MAX = 500;
 const REFRESH_ALARM = 'cost-refresh';
+const JWT_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
 function decodeJwtExp(token) {
   try {
     const payload = token.split('.')[1];
     if (!payload) return null;
-    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const padded = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
     const exp = JSON.parse(json).exp;
     return typeof exp === 'number' ? exp * 1000 : null;
   } catch {
@@ -21,24 +22,54 @@ function decodeJwtExp(token) {
   }
 }
 
+async function storeToken(rawToken, url, source) {
+  const token = String(rawToken || '')
+    .replace(/^\s*Bearer\s+/i, '')
+    .trim();
+  if (!token || !JWT_RE.test(token)) return false;
+
+  const expiresAt = decodeJwtExp(token);
+  if (expiresAt && expiresAt <= Date.now()) return false;
+
+  const current = await chrome.storage.local.get(['token', 'tokenExpiresAt']);
+  if (current.token === token) return false;
+  // Ne pas remplacer un jeton valide par un jeton qui expire plus tot.
+  if (current.token && current.tokenExpiresAt && expiresAt && expiresAt < current.tokenExpiresAt) {
+    return false;
+  }
+
+  const parsed = new URL(url);
+  const costUrl = COST_PATH_RE.test(parsed.pathname)
+    ? parsed.origin + parsed.pathname
+    : parsed.origin + COST_PATH;
+
+  await chrome.storage.local.set({
+    token,
+    costUrl,
+    tokenHost: parsed.host,
+    tokenSource: source,
+    tokenCapturedAt: Date.now(),
+    tokenExpiresAt: expiresAt
+  });
+  return true;
+}
+
 chrome.webRequest.onBeforeSendHeaders.addListener(
   (details) => {
-    if (!COST_PATH_RE.test(details.url)) return;
+    let host;
+    try {
+      host = new URL(details.url).host;
+    } catch {
+      return;
+    }
+    if (!TOKEN_HOST_RE.test(host) && !COST_PATH_RE.test(details.url)) return;
 
     const header = (details.requestHeaders || []).find(
       (h) => h.name.toLowerCase() === 'authorization'
     );
     if (!header || !header.value) return;
 
-    const token = header.value.replace(/^\s*Bearer\s+/i, '').trim();
-    if (!token) return;
-
-    chrome.storage.local.set({
-      token,
-      costUrl: details.url,
-      tokenCapturedAt: Date.now(),
-      tokenExpiresAt: decodeJwtExp(token)
-    });
+    storeToken(header.value, details.url, 'capture');
   },
   { urls: WATCHED_URLS },
   ['requestHeaders', 'extraHeaders']
@@ -48,6 +79,8 @@ async function getState() {
   return chrome.storage.local.get([
     'token',
     'costUrl',
+    'tokenHost',
+    'tokenSource',
     'tokenCapturedAt',
     'tokenExpiresAt',
     'lastCost',
@@ -88,14 +121,11 @@ async function updateBadge(cost) {
 
 async function fetchCost() {
   const { token, costUrl } = await getState();
-  if (!token) {
-    return { ok: false, reason: 'no-token' };
-  }
+  if (!token) return { ok: false, reason: 'no-token' };
 
-  const url = costUrl || DEFAULT_COST_URL;
   let response;
   try {
-    response = await fetch(url, {
+    response = await fetch(costUrl || DEFAULT_COST_URL, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
       cache: 'no-store'
@@ -135,6 +165,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     getState().then(sendResponse);
     return true;
   }
+  if (message?.type === 'set-token') {
+    (async () => {
+      const stored = await storeToken(message.token, message.url || DEFAULT_COST_URL, 'manuel');
+      if (!stored) {
+        sendResponse({ ok: false, reason: 'invalid-token' });
+        return;
+      }
+      sendResponse(await fetchCost());
+    })();
+    return true;
+  }
   if (message?.type === 'clear') {
     chrome.storage.local
       .clear()
@@ -146,7 +187,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.token?.newValue && !changes.lastCost) {
+  if (area === 'local' && changes.token && changes.token.newValue) {
     fetchCost();
   }
 });

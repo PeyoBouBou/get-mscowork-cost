@@ -4,11 +4,7 @@
   "version": "1.0.0",
   "description": "Visualise la consommation de vos credits Copilot (endpoint /v1/cost) sous forme de graphiques.",
   "permissions": ["webRequest", "storage", "alarms"],
-  "host_permissions": [
-    "*://*.powerapps.com/*",
-    "*://*.powerplatform.com/*",
-    "*://*.microsoft.com/*"
-  ],
+  "host_permissions": ["*://*.powerapps.com/*"],
   "background": {
     "service_worker": "background.js"
   },

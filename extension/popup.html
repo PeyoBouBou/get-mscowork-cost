@@ -15,13 +15,25 @@
       <div class="onboarding-icon">&#128274;</div>
       <h2>Jeton introuvable</h2>
       <p>
-        Ouvrez Copilot Studio dans un onglet et lancez la commande
-        <code>/cost</code> dans le chat.
+        Ouvrez Microsoft&nbsp;365 Copilot dans un onglet, lancez la commande
+        <code>/cost</code> (ou utilisez simplement Copilot), puis
+        <strong>rechargez la page</strong>.
       </p>
       <p class="muted">
-        L'extension recupere alors automatiquement le jeton de votre session et
-        affiche votre consommation ici.
+        L'extension recupere le jeton sur le premier appel de la page vers le
+        runtime Copilot (<code>*.gateway.prod.island.powerapps.com</code>).
       </p>
+
+      <details class="manual">
+        <summary>Saisir un jeton manuellement</summary>
+        <textarea id="manualToken" rows="3" placeholder="eyJ0eXAiOiJKV1Qi..."></textarea>
+        <input
+          id="manualUrl"
+          type="url"
+          placeholder="https://<runtime>.gateway.prod.island.powerapps.com/v1/cost"
+        />
+        <button id="manualSubmit">Utiliser ce jeton</button>
+      </details>
     </section>
 
     <section id="dashboard" class="panel hidden">
@@ -70,6 +82,7 @@
         <div><dt>Reinitialisation</dt><dd id="resetOn">-</dd></div>
         <div><dt>Dernier appel</dt><dd id="lastFetch">-</dd></div>
         <div><dt>Jeton</dt><dd id="tokenState">-</dd></div>
+        <div class="wide"><dt>Endpoint</dt><dd id="endpoint">-</dd></div>
       </dl>
     </section>
 

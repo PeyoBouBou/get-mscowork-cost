@@ -182,6 +182,46 @@ figcaption {
   padding-top: 4px;
 }
 
+.meta .wide {
+  grid-column: 1 / -1;
+}
+
+.meta .wide dd {
+  font-size: 10px;
+  word-break: break-all;
+  color: var(--muted);
+}
+
+.manual {
+  margin-top: 14px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.manual summary {
+  cursor: pointer;
+  color: var(--muted);
+  text-align: center;
+}
+
+.manual textarea,
+.manual input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 6px;
+  font: 11px/1.35 ui-monospace, Consolas, monospace;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.manual button {
+  margin-top: 6px;
+  width: 100%;
+}
+
 dt {
   font-size: 10px;
   text-transform: uppercase;

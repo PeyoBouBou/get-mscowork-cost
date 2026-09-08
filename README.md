@@ -17,8 +17,9 @@ Deux clients pour l'endpoint `/v1/cost` :
 
 - `Invoke-CostPolling.ps1` : polling en PowerShell (ci-dessous) ;
 - `extension/` : extension Chrome/Edge affichant la consommation en graphiques,
-  avec recuperation automatique du jeton de session (voir
-  [extension/README.md](extension/README.md)).
+  avec recuperation automatique du jeton de session et **decouverte automatique
+  de l'endpoint regional** (l'hote runtime varie selon le tenant), voir
+  [extension/README.md](extension/README.md).
 
 ## Apercu
 

@@ -22,6 +22,11 @@
       <p class="muted">
         L'extension recupere le jeton sur le premier appel de la page vers le
         runtime Copilot (<code>*.gateway.prod.island.powerapps.com</code>).
+        L'hote exact depend de votre tenant et de sa region : il est detecte
+        automatiquement.
+      </p>
+      <p class="muted">
+        Endpoint detecte : <code id="onboardingEndpoint">recherche en cours...</code>
       </p>
 
       <details class="manual">
@@ -82,8 +87,15 @@
         <div><dt>Reinitialisation</dt><dd id="resetOn">-</dd></div>
         <div><dt>Dernier appel</dt><dd id="lastFetch">-</dd></div>
         <div><dt>Jeton</dt><dd id="tokenState">-</dd></div>
-        <div class="wide"><dt>Endpoint</dt><dd id="endpoint">-</dd></div>
+        <div class="wide"><dt>Endpoint detecte</dt><dd id="endpoint">-</dd></div>
+        <div class="wide"><dt>Detection</dt><dd id="endpointSource">-</dd></div>
       </dl>
+
+      <details class="endpoints">
+        <summary>Endpoints decouverts (<span id="endpointCount">0</span>)</summary>
+        <ul id="endpointList"></ul>
+        <button id="rediscover" class="link">Relancer la detection</button>
+      </details>
     </section>
 
     <p id="error" class="error hidden"></p>

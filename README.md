@@ -149,14 +149,6 @@ Un jeton mis en cache dont l'`appid` ne correspond pas au `-ClientId` demande
 est ignore, ce qui evite de rester bloque sur un jeton refuse apres avoir
 change de client.
 
-## Couleurs de la console
-
-- cyan : messages du script ;
-- vert : JSON renvoye par l'API ;
-- jaune : authentification ;
-- gris fonce : separateur d'execution ;
-- rouge : erreurs.
-
 ## Autres options
 
 ```powershell
@@ -164,6 +156,3 @@ change de client.
 .\Invoke-CostPolling.ps1 -IntervalSeconds 60   # intervalle personnalise
 .\Invoke-CostPolling.ps1 -Url 'https://...'    # autre endpoint regional
 ```
-
-L'endpoint regional correct est indique par
-`GET https://cowork.<geo>-ia888.gateway.prod.island.powerapps.com/v1/routing`.

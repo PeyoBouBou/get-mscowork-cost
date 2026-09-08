@@ -136,6 +136,46 @@ function setBar(el, ratio) {
   el.style.background = ratioColor(ratio);
 }
 
+function renderEndpoints(state) {
+  const endpoints = state.endpoints || [];
+  const active = state.costUrl;
+
+  $('endpoint').textContent = active || 'non detecte';
+  const activeEntry = endpoints.find((e) => e.url === active || active?.includes(e.host));
+  const source = activeEntry?.source || state.endpointSource || 'inconnue';
+  const validated = activeEntry?.lastOkAt
+    ? `valide le ${formatDate(activeEntry.lastOkAt)}`
+    : 'jamais valide';
+  $('endpointSource').textContent = active ? `${source} - ${validated}` : 'aucune detection';
+
+  $('endpointCount').textContent = String(endpoints.length);
+  const list = $('endpointList');
+  list.textContent = '';
+  if (!endpoints.length) {
+    const li = document.createElement('li');
+    li.className = 'muted';
+    li.textContent = 'Aucun endpoint decouvert pour le moment.';
+    list.appendChild(li);
+    return;
+  }
+  endpoints
+    .slice()
+    .sort((a, b) => (b.lastOkAt || 0) - (a.lastOkAt || 0) || (b.seenAt || 0) - (a.seenAt || 0))
+    .forEach((entry) => {
+      const li = document.createElement('li');
+      if (entry.url === active) li.classList.add('active');
+      const host = document.createElement('code');
+      host.textContent = entry.host;
+      const meta = document.createElement('span');
+      meta.className = 'muted';
+      meta.textContent = ` ${entry.source || 'inconnu'} - vu le ${formatDate(entry.seenAt)}${
+        entry.lastOkAt ? ' - OK' : ''
+      }`;
+      li.append(host, meta);
+      list.appendChild(li);
+    });
+}
+
 function renderCost(cost, state) {
   const user = cost.user || {};
   const policy = cost.policy || {};
@@ -175,6 +215,7 @@ function renderCost(cost, state) {
     $('tokenState').textContent = `capture ${formatDate(state.tokenCapturedAt)}`;
   }
   $('endpoint').textContent = state.costUrl || '-';
+  renderEndpoints(state);
 
   const history = state.history || [];
   drawTrend($('trend'), history);
@@ -200,6 +241,8 @@ async function render() {
   $('refresh').classList.toggle('hidden', !hasToken);
 
   if (hasToken && cost) renderCost(cost, state);
+  $('onboardingEndpoint').textContent =
+    state?.costUrl || (state?.endpoints || [])[0]?.url || 'aucun endpoint detecte';
   showError(hasToken ? state.lastError : null);
 }
 
@@ -218,6 +261,22 @@ async function refresh() {
 }
 
 $('refresh').addEventListener('click', refresh);
+$('rediscover').addEventListener('click', async () => {
+  const button = $('rediscover');
+  button.disabled = true;
+  button.textContent = 'Detection en cours...';
+  const result = await chrome.runtime.sendMessage({ type: 'discover' });
+  button.disabled = false;
+  button.textContent = 'Relancer la detection';
+  if (result?.reason === 'no-tab') {
+    showError('Ouvrez un onglet Microsoft 365 Copilot pour detecter l\'endpoint.');
+  } else if (!result?.ok) {
+    showError('Aucun endpoint runtime trouve dans les onglets ouverts.');
+  } else {
+    showError(null);
+  }
+  await render();
+});
 $('manualSubmit').addEventListener('click', async () => {
   const token = $('manualToken').value.trim();
   const url = $('manualUrl').value.trim();
@@ -248,5 +307,10 @@ chrome.storage.onChanged.addListener((_changes, area) => {
 (async () => {
   await render();
   const state = await chrome.runtime.sendMessage({ type: 'state' });
+  // Sans endpoint connu, on lance une detection avant tout appel.
+  if (!(state?.endpoints || []).length) {
+    await chrome.runtime.sendMessage({ type: 'discover' });
+    await render();
+  }
   if (state?.token) await refresh();
 })();

@@ -14,9 +14,7 @@ Aucun jeton n'est demande a l'utilisateur. Le service worker observe les
 requetes sortantes (`chrome.webRequest.onBeforeSendHeaders`) vers
 `*.powerapps.com` et capture l'en-tete `Authorization` de **tout appel vers le
 runtime Copilot** (`*.gateway.prod.island.powerapps.com`) — pas seulement les
-appels a `/v1/cost`, car la page n'appelle pas forcement ce chemin. L'URL de
-l'endpoint est alors deduite : `https://<hote runtime>/v1/cost` (l'hote varie
-selon la region du tenant : `-eus`, `-wus`, ...).
+appels a `/v1/cost`, car la page n'appelle pas forcement ce chemin.
 
 Regles appliquees :
 
@@ -29,6 +27,43 @@ Regles appliquees :
 
 En dernier recours, l'ecran d'accueil propose **Saisir un jeton manuellement**
 (coller le JWT, et si besoin l'URL exacte de l'endpoint).
+
+## Decouverte automatique de l'endpoint
+
+L'hote du runtime **n'est pas statique** : il depend du tenant et de sa region.
+
+```
+https://mcsaetherruntime-eus.us-ia106.gateway.prod.island.powerapps.com/v1/cost
+https://mcsaetherruntime-cus.us-ia302.gateway.prod.island.powerapps.com/v1/cost
+```
+
+Aucune URL n'est donc codee en dur dans le flux normal : l'extension decouvre
+l'hote toute seule, par quatre sources cumulees.
+
+| Source                | Mecanisme                                                                     |
+| --------------------- | ----------------------------------------------------------------------------- |
+| `trafic reseau`       | `webRequest` : tout appel vers `*.gateway.prod.island.powerapps.com`           |
+| `hook page`           | hooks `fetch` / `XMLHttpRequest` injectes dans la page (monde MAIN)            |
+| `decouverte page`     | scan des `performance` resource entries et du `local`/`sessionStorage`         |
+| `scan memoire`        | scan approfondi (IndexedDB comprise) lance avec la recherche de jeton          |
+
+Chaque hote vu est memorise dans un registre local (`endpoints`, 20 max) avec sa
+source, sa date de detection et sa derniere validation reussie.
+
+Lors d'un appel, `fetchCost` essaie les candidats dans l'ordre : endpoint actif,
+puis endpoints decouverts (les plus recemment valides d'abord), puis un
+fallback historique. Un hote injoignable ou en erreur HTTP fait passer au
+suivant ; un `401`/`403` arrete la boucle (c'est le jeton, pas l'endpoint). Le
+premier endpoint qui repond devient l'endpoint actif. Si aucun ne repond, une
+nouvelle decouverte est lancee puis un second essai est effectue.
+
+Le popup affiche pour information :
+
+- **Endpoint detecte** : l'URL actuellement utilisee ;
+- **Detection** : la source de la decouverte et la date de derniere validation ;
+- **Endpoints decouverts (n)** : la liste complete (hote, source, date), l'actif
+  etant surligne, avec un bouton **Relancer la detection**.
+
 
 ## Installation
 
@@ -91,7 +126,8 @@ Le popup affiche :
 - une courbe d'evolution de la consommation utilisateur (historique local, avec
   la limite en pointilles) ;
 - les dates `asOfDate`, `resetOn` (avec compte a rebours), le dernier appel,
-  l'etat du jeton (validite restante, source) et l'endpoint utilise ;
+  l'etat du jeton (validite restante, source), l'endpoint detecte et la liste
+  des endpoints decouverts ;
 
 Le badge de l'icone indique le pourcentage consomme ; il est rafraichi
 automatiquement toutes les 15 minutes (`chrome.alarms`) et a chaque ouverture du
@@ -109,7 +145,7 @@ stockage.
 | Fichier         | Role                                                        |
 | --------------- | ----------------------------------------------------------- |
 | `manifest.json` | Manifest V3, permissions `webRequest`, `storage`, `alarms`   |
-| `background.js` | Capture du jeton, appel de l'API, historique, badge          |
+| `background.js` | Capture du jeton, decouverte des endpoints, appel de l'API, historique, badge |
 | `popup.html`    | Structure du popup                                           |
 | `popup.css`     | Styles (theme clair / sombre automatique)                    |
 | `popup.js`      | Rendu des jauges, barres et courbe (canvas, sans dependance) |

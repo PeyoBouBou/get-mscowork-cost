@@ -4,11 +4,28 @@
   const HOST_RE = /(^|\.)gateway\.prod\.island\.powerapps\.com$/i;
 
   const publish = (token, url) => {
-    if (!token) return;
     window.postMessage(
-      { source: 'copilot-credits-monitor', token: String(token).replace(/^Bearer\s+/i, ''), url },
+      {
+        source: 'copilot-credits-monitor',
+        token: token ? String(token).replace(/^Bearer\s+/i, '') : null,
+        url
+      },
       '*'
     );
+  };
+
+  // Signale l'hote runtime des qu'il est vu, meme sans en-tete Authorization :
+  // l'hote depend du tenant/region et doit etre decouvert dynamiquement.
+  const seenUrls = new Set();
+  const publishEndpoint = (url) => {
+    try {
+      const absolute = new URL(url, location.href);
+      if (!HOST_RE.test(absolute.host) || seenUrls.has(absolute.host)) return;
+      seenUrls.add(absolute.host);
+      publish(null, absolute.href);
+    } catch {
+      /* URL inutilisable */
+    }
   };
 
   const matches = (url) => {
@@ -25,6 +42,7 @@
       try {
         const url = typeof input === 'string' ? input : input?.url;
         if (url && matches(url)) {
+          publishEndpoint(url);
           let auth = null;
           const initHeaders = init?.headers;
           if (initHeaders instanceof Headers) auth = initHeaders.get('authorization');
@@ -48,6 +66,11 @@
   const setHeaderOriginal = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.open = function (method, url) {
     this.__ccmUrl = url;
+    try {
+      publishEndpoint(url);
+    } catch {
+      /* ignore */
+    }
     return openOriginal.apply(this, arguments);
   };
   XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
